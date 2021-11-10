@@ -421,6 +421,96 @@ def strotss(content_pil, style_pil, content_weight=1.0*16.0, device='cuda:0', sp
     result_image /= result_image.max()
     return np_to_pil(result_image * 255.)
 
+def scale_loss(result, content, style, scale, content_weight, lr, extractor):
+    total_loss = 0.0
+    # torch.autograd.set_detect_anomaly(True)
+    result_pyramid = make_laplace_pyramid(result, 5)
+
+    opt_iter = 5
+    # if scale == 1:
+    #     opt_iter = 800
+
+    # use rmsprop
+
+    # extract features for content
+    feat_content = extractor(content) # 
+
+    stylized = fold_laplace_pyramid(result_pyramid)
+    # let's ignore the regions for now
+    # some inner loop that extracts samples
+    feat_style = None
+    for i in range(5):
+        with torch.no_grad():
+            # r is region of interest (mask)
+            feat_e = extractor.forward_samples_hypercolumn(style, samps=1000)
+            feat_style = feat_e if feat_style is None else torch.cat((feat_style, feat_e), dim=2)
+    # feat_style.requires_grad_(False)
+
+    # init indices to optimize over
+    xx, xy = sample_indices(feat_content[0], feat_style) # 0 to sample over first layer extracted
+    for it in range(opt_iter):
+
+        stylized = fold_laplace_pyramid(result_pyramid)
+        # original code has resample here, seems pointless with uniform shuffle
+        # ...
+        # also shuffle them every y iter
+        if it % 1 == 0 and it != 0:
+            np.random.shuffle(xx)
+            np.random.shuffle(xy)
+        feat_result = extractor(stylized)
+
+        loss = calculate_loss(feat_result, feat_content, feat_style, [xx, xy], content_weight)
+        total_loss += loss
+
+    return total_loss
+
+extractor = Vgg16_Extractor(space='uniform').to('cuda:0')
+def strotss_loss(out_tensor, style_tensor, content_weight=1.0*16.0, device='cuda:0', space='uniform'): #out: tensor style: tensor [B,C,W,H] B=1
+    global extractor
+    total_loss = 0.0
+    
+    content_full = out_tensor
+    style_full = style_tensor
+
+    lr = 2e-3
+    
+
+    scale_last = max(content_full.shape[2], content_full.shape[3])
+    scales = []
+    for scale in range(10):
+        divisor = 2**scale
+        if min(content_full.shape[2], content_full.shape[3]) // divisor >= 33:
+            scales.insert(0, divisor)
+    
+    for scale in scales:
+        # rescale content to current scale
+        content = tensor_resample(content_full, [ content_full.shape[2] // scale, content_full.shape[3] // scale ])
+        style = tensor_resample(style_full, [ style_full.shape[2] // scale, style_full.shape[3] // scale ])
+        print(f'Optimizing at resoluton [{content.shape[2]}, {content.shape[3]}]') 
+
+        # upsample or initialize the result
+        if scale == scales[0]:
+            # first
+            result = laplacian(content) + style.mean(2,keepdim=True).mean(3,keepdim=True)
+        elif scale == scales[-1]:
+            # last 
+            result = tensor_resample(result, [content.shape[2], content.shape[3]])
+            lr = 1e-3
+        else:
+            result = tensor_resample(result, [content.shape[2], content.shape[3]]) + laplacian(content)
+
+        # do the optimization on this scale
+        total_loss += scale_loss(result, content, style, scale, content_weight=content_weight, lr=lr, extractor=extractor)
+
+        # next scale lower weight
+        content_weight /= 2.0
+
+    return total_loss
+
+
+
+
+
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("content", type=str)
