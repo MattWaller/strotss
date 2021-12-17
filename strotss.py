@@ -509,32 +509,13 @@ def strotss_loss(out_tensor, style_tensor, content_weight=1.0*16.0, device='cuda
 
 
 
+from types import SimpleNamespace
 
-
-if __name__ == "__main__":
-    parser = ArgumentParser()
-    parser.add_argument("content", type=str)
-    parser.add_argument("style", type=str)
-    parser.add_argument("--weight", type=float, default=1.0)
-    parser.add_argument("--output", type=str, default="strotss.png")
-    parser.add_argument("--device", type=str, default="cuda:0")
-    # uniform ospace = optimization done in [-1, 1], else imagenet normalized space
-    parser.add_argument("--ospace", type=str, default="uniform", choices=["uniform", "vgg"])
-    parser.add_argument("--resize_to", type=int, default=512)
-    args = parser.parse_args()
-
-    # make 256 the smallest possible long side, will still fail if short side is <
-    if args.resize_to < 2**8:
-        print("Resulution too low.")
-        exit(1)
-
-    content_pil, style_pil = pil_loader(args.content), pil_loader(args.style)
-    content_weight = args.weight * 16.0
-
-    device = args.device
-
+def run_strotss(content,style,weight):
+    content_pil, style_pil = pil_loader(content), pil_loader(style)
+    content_weight = 16.0 * weight
     start = time()
-    result = strotss(pil_resize_long_edge_to(content_pil, args.resize_to), 
-                     pil_resize_long_edge_to(style_pil, args.resize_to), content_weight, device, args.ospace)
-    result.save(args.output)
+    result = strotss(pil_resize_long_edge_to(content_pil, 512), 
+                     pil_resize_long_edge_to(style_pil, 512), content_weight, "cuda:0", "uniform")
     print(f'Done in {time()-start:.3f}s')
+    return result
