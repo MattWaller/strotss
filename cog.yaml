@@ -1,9 +1,9 @@
 build:
   gpu: true
-  cuda: "11.1"
+  cuda: "10.2"
   python_version: "3.7.12"
   python_packages:
-    - "torch==1.10.0"
-    - "torchvision==0.11.1"
+    - "torch==1.9.0"
+    - "torchvision==0.10.0"
 predict: "predict.py:Predictor"
 image: "r8.im/dazhizhong/strotss"
