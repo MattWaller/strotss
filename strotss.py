@@ -8,12 +8,12 @@ import numpy as np
 import os
 import math
 import PIL
-from time import time
 from argparse import ArgumentParser
 
 class Vgg16_Extractor(nn.Module):
     def __init__(self, space):
         super().__init__()
+        torch.hub.set_dir("models")
         self.vgg_layers = models.vgg16(pretrained=True).features
 
         for param in self.parameters():
@@ -331,11 +331,8 @@ def calculate_loss(feat_result, feat_content, feat_style, indices, content_weigh
 def optimize(result, content, style, scale, content_weight, lr, extractor):
     # torch.autograd.set_detect_anomaly(True)
     result_pyramid = make_laplace_pyramid(result, 5)
-    result_pyramid = [l.data.requires_grad_() for l in result_pyramid]
-
+    result_pyramid = [l.data.requires_grad_() for l in result_pyramid]    
     opt_iter = 200
-    # if scale == 1:
-    #     opt_iter = 800
 
     # use rmsprop
     optimizer = optim.RMSprop(result_pyramid, lr=lr)
@@ -421,101 +418,13 @@ def strotss(content_pil, style_pil, content_weight=1.0*16.0, device='cuda:0', sp
     result_image /= result_image.max()
     return np_to_pil(result_image * 255.)
 
-def scale_loss(result, content, style, scale, content_weight, lr, extractor):
-    total_loss = 0.0
-    # torch.autograd.set_detect_anomaly(True)
-    result_pyramid = make_laplace_pyramid(result, 5)
-
-    opt_iter = 5
-    # if scale == 1:
-    #     opt_iter = 800
-
-    # use rmsprop
-
-    # extract features for content
-    feat_content = extractor(content) # 
-
-    stylized = fold_laplace_pyramid(result_pyramid)
-    # let's ignore the regions for now
-    # some inner loop that extracts samples
-    feat_style = None
-    for i in range(5):
-        with torch.no_grad():
-            # r is region of interest (mask)
-            feat_e = extractor.forward_samples_hypercolumn(style, samps=1000)
-            feat_style = feat_e if feat_style is None else torch.cat((feat_style, feat_e), dim=2)
-    # feat_style.requires_grad_(False)
-
-    # init indices to optimize over
-    xx, xy = sample_indices(feat_content[0], feat_style) # 0 to sample over first layer extracted
-    for it in range(opt_iter):
-
-        stylized = fold_laplace_pyramid(result_pyramid)
-        # original code has resample here, seems pointless with uniform shuffle
-        # ...
-        # also shuffle them every y iter
-        if it % 1 == 0 and it != 0:
-            np.random.shuffle(xx)
-            np.random.shuffle(xy)
-        feat_result = extractor(stylized)
-
-        loss = calculate_loss(feat_result, feat_content, feat_style, [xx, xy], content_weight)
-        total_loss += loss
-
-    return total_loss
-
-extractor = Vgg16_Extractor(space='uniform').to('cuda:0')
-def strotss_loss(out_tensor, style_tensor, content_weight=1.0*16.0, device='cuda:0', space='uniform'): #out: tensor style: tensor [B,C,W,H] B=1
-    global extractor
-    total_loss = 0.0
-    
-    content_full = out_tensor
-    style_full = style_tensor
-
-    lr = 2e-3
-    
-
-    scale_last = max(content_full.shape[2], content_full.shape[3])
-    scales = []
-    for scale in range(10):
-        divisor = 2**scale
-        if min(content_full.shape[2], content_full.shape[3]) // divisor >= 33:
-            scales.insert(0, divisor)
-    
-    for scale in scales:
-        # rescale content to current scale
-        content = tensor_resample(content_full, [ content_full.shape[2] // scale, content_full.shape[3] // scale ])
-        style = tensor_resample(style_full, [ style_full.shape[2] // scale, style_full.shape[3] // scale ])
-        print(f'Optimizing at resoluton [{content.shape[2]}, {content.shape[3]}]') 
-
-        # upsample or initialize the result
-        if scale == scales[0]:
-            # first
-            result = laplacian(content) + style.mean(2,keepdim=True).mean(3,keepdim=True)
-        elif scale == scales[-1]:
-            # last 
-            result = tensor_resample(result, [content.shape[2], content.shape[3]])
-            lr = 1e-3
-        else:
-            result = tensor_resample(result, [content.shape[2], content.shape[3]]) + laplacian(content)
-
-        # do the optimization on this scale
-        total_loss += scale_loss(result, content, style, scale, content_weight=content_weight, lr=lr, extractor=extractor)
-
-        # next scale lower weight
-        content_weight /= 2.0
-
-    return total_loss
-
-
-
 from types import SimpleNamespace
 
 def run_strotss(content,style,weight):
     content_pil, style_pil = pil_loader(content), pil_loader(style)
     content_weight = 16.0 * weight
-    start = time()
-    result = strotss(pil_resize_long_edge_to(content_pil, 512), 
-                     pil_resize_long_edge_to(style_pil, 512), content_weight, "cuda:0", "uniform")
-    print(f'Done in {time()-start:.3f}s')
+    content_pil = pil_resize_long_edge_to(content_pil, 512)
+    style_pil = pil_resize_long_edge_to(style_pil, 512)
+    print("starting running the strotss algorithm")
+    result = strotss(content_pil, style_pil, content_weight, "cuda:0", "uniform")
     return result
