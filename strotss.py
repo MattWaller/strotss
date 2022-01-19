@@ -371,11 +371,11 @@ def optimize(result, content, style, scale, content_weight, lr, extractor):
     return stylized
 
 
-def strotss(content_pil, style_pil, content_weight=1.0*16.0, device='cuda:0', space='uniform'):
+def strotss(content_pil, style_pil, content_weight=1.0*16.0, device='cuda:0', device2='cuda:0', space='uniform'):
     content_np = pil_to_np(content_pil)
     style_np = pil_to_np(style_pil)
     content_full = np_to_tensor(content_np, space).to(device)
-    style_full = np_to_tensor(style_np, space).to(device)
+    style_full = np_to_tensor(style_np, space).to(device2)
 
     lr = 2e-3
     extractor = Vgg16_Extractor(space=space).to(device)
@@ -426,5 +426,5 @@ def run_strotss(content,style,weight):
     content_pil = pil_resize_long_edge_to(content_pil, 512)
     style_pil = pil_resize_long_edge_to(style_pil, 512)
     print("starting running the strotss algorithm")
-    result = strotss(content_pil, style_pil, content_weight, "cuda:0", "uniform")
+    result = strotss(content_pil, style_pil, content_weight, "cuda:0","cuda:0", "uniform")
     return result
