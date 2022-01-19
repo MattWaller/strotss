@@ -14,7 +14,7 @@ class Vgg16_Extractor(nn.Module):
     def __init__(self, space):
         super().__init__()
         torch.hub.set_dir("models")
-        self.vgg_layers = models.squeezenet1_0(pretrained=True).features
+        self.vgg_layers = models.vgg19(pretrained=True).features
 
         for param in self.parameters():
             param.requires_grad = False
